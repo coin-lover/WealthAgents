@@ -10,6 +10,7 @@ from wealthagents.state import WealthState, UserProfile
 from wealthagents.graph import WealthAgentsGraph
 from wealthagents.mentors.registry import MentorRegistry
 from wealthagents.connections import AccountConnectionManager, get_connection_mode
+from wealthagents.llm import MiniMaxLLM
 
 
 class WealthAgents:
@@ -32,6 +33,7 @@ class WealthAgents:
         user_profile: UserProfile,
         mentor: str = "warren_buffett",
         state: Optional[WealthState] = None,
+        llm: Optional[MiniMaxLLM] = None,
     ):
         """Initialize WealthAgents.
         
@@ -39,9 +41,12 @@ class WealthAgents:
             user_profile: The user's financial profile
             mentor: Mentor persona ID (default: warren_buffett)
             state: Optional existing WealthState to continue from
+            llm: Optional LLM client (e.g., MiniMaxLLM) used to enhance
+                 the mentor's voice narrative. Heuristic mode when None.
         """
         self.user_profile = user_profile
         self.mentor_id = mentor
+        self.llm = llm
         
         if state:
             self.state = state
@@ -53,7 +58,7 @@ class WealthAgents:
                 mentor_id=mentor,
             )
         
-        self._graph = WealthAgentsGraph(mentor_id=mentor)
+        self._graph = WealthAgentsGraph(mentor_id=mentor, llm=llm)
         self._connection_manager = AccountConnectionManager(user_profile)
     
     @property
@@ -88,6 +93,10 @@ class WealthAgents:
         # Run graph
         self.state = self._graph.run(self.state)
         
+        # LLM enhancement: rewrite the mentor narrative in authentic voice
+        if self.llm and self.state.mentored_plan:
+            self._enhance_mentor_narrative()
+        
         # Increment version
         self.state.version += 1
         
@@ -113,6 +122,7 @@ class WealthAgents:
             user_profile=self.user_profile,
             mentor=mentor_id,
             state=self.state,
+            llm=self.llm,
         )
         new_agent.state.mentor_id = mentor_id
         return new_agent
@@ -191,6 +201,43 @@ class WealthAgents:
         
         return results
     
+    def _enhance_mentor_narrative(self) -> None:
+        """Rewrite the mentor's voice narrative using the LLM, if available.
+        
+        Falls back silently to the heuristic narrative when the LLM is
+        unavailable or the request fails.
+        """
+        mentor = MentorRegistry.get(self.state.mentor_id)
+        if mentor is None or not self.llm.is_available():
+            return
+        
+        plan = self.state.mentored_plan
+        s = self.state.strategy
+        profile = self.user_profile
+        
+        user_message = f"""Here is my financial situation and the wealth plan your team drafted for me.
+
+MY PROFILE:
+- Age: {profile.age}
+- Annual gross income: ${profile.annual_gross_income:,.0f}
+- Monthly expenses: ${profile.monthly_expenses:,.0f}
+- Net worth: ${sum(a.value for a in profile.assets) - sum(d.balance for d in profile.liabilities):,.0f}
+
+THE PLAN:
+{plan.mentored_strategy}
+
+PLAN SUMMARY:
+{s.strategy_summary if s else 'N/A'}
+
+Please speak to me directly in your own voice. React to this plan as you would
+in a letter to a partner: what you like, what worries you, what I should do
+next, and one story or analogy from your experience that fits my situation.
+Keep it under 500 words. Do not give specific stock picks or market timing advice."""
+        
+        narrative = self.llm.chat(mentor.build_system_prompt(), user_message)
+        if narrative:
+            plan.mentor_voice_narrative = narrative
+
     @staticmethod
     def list_mentors() -> List[dict]:
         """List all available mentor personas.

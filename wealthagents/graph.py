@@ -13,6 +13,8 @@ personal wealth evaluation.
 from typing import Dict, Any, Optional
 from datetime import datetime
 
+from wealthagents.llm import MiniMaxLLM
+
 from wealthagents.state import WealthState, UserProfile, PlanDecision
 from wealthagents.agents.analysts import (
     IncomeAnalyst,
@@ -41,20 +43,21 @@ class WealthAgentsGraph:
     as a sequential executor, or adapted to LangGraph nodes.
     """
     
-    def __init__(self, mentor_id: str = "warren_buffett"):
+    def __init__(self, mentor_id: str = "warren_buffett", llm: Optional[MiniMaxLLM] = None):
         self.mentor_id = mentor_id
+        self.llm = llm
         
         # Analyst team
-        self.income_analyst = IncomeAnalyst()
-        self.expense_analyst = ExpenseAnalyst()
-        self.asset_analyst = AssetLiabilityAnalyst()
-        self.goal_analyst = GoalAnalyst()
-        self.risk_analyst = RiskProfileAnalyst()
+        self.income_analyst = IncomeAnalyst(llm=llm)
+        self.expense_analyst = ExpenseAnalyst(llm=llm)
+        self.asset_analyst = AssetLiabilityAnalyst(llm=llm)
+        self.goal_analyst = GoalAnalyst(llm=llm)
+        self.risk_analyst = RiskProfileAnalyst(llm=llm)
         
         # Researcher team
-        self.optimistic_researcher = OptimisticResearcher()
-        self.cautious_researcher = CautiousResearcher()
-        self.debate_synthesizer = DebateSynthesizer()
+        self.optimistic_researcher = OptimisticResearcher(llm=llm)
+        self.cautious_researcher = CautiousResearcher(llm=llm)
+        self.debate_synthesizer = DebateSynthesizer(llm=llm)
         
         # Planning team
         self.strategist = Strategist()
@@ -208,13 +211,13 @@ class WealthAgentsGraph:
     
     def with_mentor(self, mentor_id: str) -> "WealthAgentsGraph":
         """Create a new graph instance with a different mentor."""
-        new_graph = WealthAgentsGraph(mentor_id=mentor_id)
+        new_graph = WealthAgentsGraph(mentor_id=mentor_id, llm=self.llm)
         return new_graph
 
 
 # ─── LangGraph Adapter (optional) ───
 
-def build_langgraph_workflow(mentor_id: str = "warren_buffett"):
+def build_langgraph_workflow(mentor_id: str = "warren_buffett", llm: Optional[MiniMaxLLM] = None):
     """Build a LangGraph StateGraph for WealthAgents.
     
     This is the advanced version that uses LangGraph for
@@ -223,7 +226,7 @@ def build_langgraph_workflow(mentor_id: str = "warren_buffett"):
     Requires: pip install langgraph
     
     Usage:
-        graph = build_langgraph_workflow()
+        graph = build_langgraph_workflow(llm=MiniMaxLLM())
         result = graph.invoke(initial_state)
     """
     try:
@@ -238,7 +241,7 @@ def build_langgraph_workflow(mentor_id: str = "warren_buffett"):
         wealth_state: WealthState
     
     # Initialize agents
-    graph = WealthAgentsGraph(mentor_id=mentor_id)
+    graph = WealthAgentsGraph(mentor_id=mentor_id, llm=llm)
     
     # Node functions
     def analyst_node(state: GraphState) -> GraphState:

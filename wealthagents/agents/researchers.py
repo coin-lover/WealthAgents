@@ -4,6 +4,8 @@ Bullish (optimistic) and bearish (cautious) researchers debate the
 wealth plan, mirroring TradingAgents' Researcher Team dynamic.
 """
 
+from typing import Optional
+
 from wealthagents.agents.base import BaseWealthAgent
 from wealthagents.state import (
     ResearchView,
@@ -22,8 +24,8 @@ class OptimisticResearcher(BaseWealthAgent):
     - Inflation as a reason to invest, not save
     """
     
-    def __init__(self):
-        super().__init__("Optimistic Researcher")
+    def __init__(self, llm=None):
+        super().__init__("Optimistic Researcher", llm=llm)
     
     def run(self, state: WealthState) -> ResearchView:
         profile = state.user_profile
@@ -40,12 +42,18 @@ class OptimisticResearcher(BaseWealthAgent):
         concerns = self._build_concerns(profile, analyses)
         confidence = self._calculate_confidence(analyses)
         
-        return ResearchView(
-            perspective="optimistic",
-            thesis=thesis,
-            key_points=key_points,
-            concerns=concerns,
-            confidence=confidence,
+        return self._enhance_qualitative(
+            state,
+            ResearchView(
+                perspective="optimistic",
+                thesis=thesis,
+                key_points=key_points,
+                concerns=concerns,
+                confidence=confidence,
+            ),
+            fields=["thesis", "key_points", "concerns"],
+            role=("You are the bullish researcher. Argue for growth, compounding, and "
+                  "the opportunity cost of excess caution."),
         )
     
     def _build_thesis(self, profile, analyses) -> str:
@@ -124,8 +132,8 @@ class CautiousResearcher(BaseWealthAgent):
     - The cost of being wrong vs cost of being slow
     """
     
-    def __init__(self):
-        super().__init__("Cautious Researcher")
+    def __init__(self, llm=None):
+        super().__init__("Cautious Researcher", llm=llm)
     
     def run(self, state: WealthState) -> ResearchView:
         profile = state.user_profile
@@ -142,12 +150,18 @@ class CautiousResearcher(BaseWealthAgent):
         concerns = self._build_concerns(profile, analyses)
         confidence = self._calculate_confidence(analyses)
         
-        return ResearchView(
-            perspective="cautious",
-            thesis=thesis,
-            key_points=key_points,
-            concerns=concerns,
-            confidence=confidence,
+        return self._enhance_qualitative(
+            state,
+            ResearchView(
+                perspective="cautious",
+                thesis=thesis,
+                key_points=key_points,
+                concerns=concerns,
+                confidence=confidence,
+            ),
+            fields=["thesis", "key_points", "concerns"],
+            role=("You are the bearish researcher. Argue for resilience, "
+                  "sequence-of-returns risk, and plan fragility."),
         )
     
     def _build_thesis(self, profile, analyses) -> str:
@@ -225,18 +239,78 @@ class CautiousResearcher(BaseWealthAgent):
 
 
 class DebateSynthesizer:
-    """Synthesizes the debate between optimistic and cautious researchers."""
+    """Synthesizes the debate between optimistic and cautious researchers.
+    
+    In LLM mode this runs a real multi-step debate, mirroring
+    TradingAgents' researcher dynamic:
+      1. Optimistic researcher states their thesis
+      2. Cautious researcher rebuts given that thesis
+      3. A neutral judge synthesizes both sides into a conclusion
+    In heuristic mode the original rule-based synthesis is used.
+    """
+    
+    def __init__(self, llm=None):
+        self.llm = llm
     
     def synthesize(self, state: WealthState) -> DebateResult:
-        optimistic = state.income_analysis  # Placeholder - would be fetched from state
+        opt = OptimisticResearcher(llm=self.llm).run(state)
+        caut = CautiousResearcher(llm=self.llm).run(state)
         
-        # In real implementation, these would be stored in state
-        # For now, we reconstruct
-        from wealthagents.agents.researchers import OptimisticResearcher, CautiousResearcher
+        if self.llm is not None and self.llm.is_available():
+            result = self._llm_debate(state, opt, caut)
+            if result is not None:
+                return result
         
-        opt = OptimisticResearcher().run(state)
-        caut = CautiousResearcher().run(state)
+        return self._heuristic_synthesis(opt, caut)
+    
+    def _llm_debate(self, state: WealthState, opt: ResearchView, caut: ResearchView) -> Optional[DebateResult]:
+        """Run a genuine LLM debate: bullish thesis -> bearish rebuttal -> judge synthesis."""
+        from wealthagents.agents.base import BaseWealthAgent
+        context = BaseWealthAgent._build_context(self, state)
+        analyses = (
+            f"ANALYST REPORTS:\n- Optimistic: {opt.thesis}\n  Points: {opt.key_points}\n"
+            f"- Cautious: {caut.thesis}\n  Points: {caut.key_points}\n"
+            f"Urgent concerns: {opt.concerns + caut.concerns}"
+        )
         
+        # Round 1: bullish thesis
+        opt_thesis = self.llm.chat(
+            "You are the bullish researcher on a wealth-planning desk. Argue forcefully "
+            "for growth, compounding, and the opportunity cost of excess caution. "
+            "2 short paragraphs, first person.",
+            f"{context}\n\n{analyses}\n\nState your thesis for how this user's plan should lean.",
+        )
+        
+        # Round 2: bearish rebuttal, given the actual thesis
+        caut_rebuttal = self.llm.chat(
+            "You are the bearish researcher on a wealth-planning desk. You have just heard "
+            "your bullish colleague's thesis. Rebut it directly: what breaks this plan, what "
+            "is being ignored, what must be protected first. 2 short paragraphs, first person.",
+            f"{context}\n\nBULLISH THESIS:\n{opt_thesis}\n\n{analyses}\n\nDeliver your rebuttal.",
+        )
+        
+        # Round 3: neutral judge
+        synthesis = self.llm.chat(
+            "You are the neutral head of research settling a debate between a bullish and a "
+            "bearish researcher about a user's wealth plan. Weigh both sides and deliver a "
+            "synthesis: what the final plan should prioritize, in 1 short paragraph.",
+            f"USER CONTEXT:\n{context}\n\nBULLISH:\n{opt_thesis}\n\nBEARISH:\n{caut_rebuttal}",
+        )
+        
+        if not (opt_thesis and caut_rebuttal and synthesis):
+            return None
+        
+        opt = opt.model_copy(update={"thesis": opt_thesis})
+        caut = caut.model_copy(update={"thesis": caut_rebuttal})
+        
+        return DebateResult(
+            optimistic_view=opt,
+            cautious_view=caut,
+            synthesis=synthesis,
+            key_risks_to_monitor=list(dict.fromkeys(opt.concerns + caut.concerns)),
+        )
+    
+    def _heuristic_synthesis(self, opt: ResearchView, caut: ResearchView) -> DebateResult:
         # Determine synthesis based on which concerns are more urgent
         urgent_concerns = [c for c in caut.concerns if "NEGATIVE" in c or "dangerously" in c.lower()]
         

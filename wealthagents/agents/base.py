@@ -5,9 +5,11 @@ structured output generation and error handling.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, TypeVar
+from typing import Any, Dict, List, Optional, TypeVar
 
 from pydantic import BaseModel
+
+from wealthagents.llm import MiniMaxLLM, extract_json
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -19,9 +21,15 @@ class BaseWealthAgent(ABC):
     and produces a structured Pydantic output.
     """
     
-    def __init__(self, name: str, model_config: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        name: str,
+        model_config: Optional[Dict[str, Any]] = None,
+        llm: Optional[MiniMaxLLM] = None,
+    ):
         self.name = name
         self.model_config = model_config or {}
+        self.llm = llm
         
     @abstractmethod
     def run(self, state) -> BaseModel:
@@ -83,6 +91,59 @@ RISK PROFILE:
 - Previous Market Reaction: {profile.previous_market_reaction or 'Not specified'}
 """
         return context
+
+    # ─── LLM helpers (TradingAgents-style: tools compute, LLM reasons) ───
+
+    def _llm_available(self) -> bool:
+        """True when an LLM client is configured and reachable."""
+        return self.llm is not None and self.llm.is_available()
+
+    def _llm_json(self, system_prompt: str, user_message: str) -> Optional[dict]:
+        """Ask the LLM for a JSON object and return it parsed.
+
+        Returns None when the LLM is unavailable or the reply is not
+        valid JSON, so callers can fall back to heuristic output.
+        """
+        if not self._llm_available():
+            return None
+        return extract_json(self.llm.chat(system_prompt, user_message))
+
+    def _enhance_qualitative(self, state, result: T, fields: List[str], role: str) -> T:
+        """Ask the LLM to improve qualitative fields of a heuristic result.
+
+        Numeric/scored fields are always kept from the heuristic pass
+        (deterministic math); the LLM rewrites the qualitative ones
+        (theses, risks, recommendations) with user-specific reasoning.
+        Falls back to the heuristic result on any failure.
+        """
+        if not self._llm_available():
+            return result
+
+        metrics = result.model_dump()
+        system_prompt = (
+            f"You are the {self.name} in a multi-agent personal wealth "
+            f"framework, modeled on trading-desk research teams. {role}\n\n"
+            "Reply with ONLY a JSON object containing the requested fields. "
+            "No markdown, no commentary."
+        )
+        user_message = (
+            f"{self._build_context(state)}\n\n"
+            f"HEURISTIC ANALYSIS (numeric metrics are authoritative, do not change them):\n"
+            f"{metrics}\n\n"
+            f"Rewrite ONLY these fields to be specific, insightful, and tailored "
+            f"to this user (same JSON types, 3-6 items for lists): {', '.join(fields)}"
+        )
+
+        data = self._llm_json(system_prompt, user_message)
+        if not data:
+            return result
+
+        update = {}
+        for f in fields:
+            value = data.get(f)
+            if value is not None and isinstance(value, type(getattr(result, f))):
+                update[f] = value
+        return result.model_copy(update=update) if update else result
     
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(name={self.name})"

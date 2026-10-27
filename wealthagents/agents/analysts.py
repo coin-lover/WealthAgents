@@ -24,8 +24,8 @@ class IncomeAnalyst(BaseWealthAgent):
     human capital rather than company financials.
     """
     
-    def __init__(self):
-        super().__init__("Income Analyst")
+    def __init__(self, llm=None):
+        super().__init__("Income Analyst", llm=llm)
     
     def run(self, state: WealthState) -> IncomeAnalysis:
         profile = state.user_profile
@@ -45,12 +45,17 @@ class IncomeAnalyst(BaseWealthAgent):
         # Generate recommendations
         recommendations = self._generate_recommendations(profile, stability_score)
         
-        return IncomeAnalysis(
-            income_score=income_score,
-            income_stability_rating=stability_score,
-            growth_trajectory=trajectory,
-            key_risks=risks,
-            recommendations=recommendations,
+        return self._enhance_qualitative(
+            state,
+            IncomeAnalysis(
+                income_score=income_score,
+                income_stability_rating=stability_score,
+                growth_trajectory=trajectory,
+                key_risks=risks,
+                recommendations=recommendations,
+            ),
+            fields=["growth_trajectory", "key_risks", "recommendations"],
+            role="You evaluate income stability, career trajectory, and human-capital risks.",
         )
     
     def _assess_stability(self, profile) -> str:
@@ -117,8 +122,8 @@ class IncomeAnalyst(BaseWealthAgent):
 class ExpenseAnalyst(BaseWealthAgent):
     """Analyzes spending patterns, savings rate, and cash flow health."""
     
-    def __init__(self):
-        super().__init__("Expense & Cashflow Analyst")
+    def __init__(self, llm=None):
+        super().__init__("Expense & Cashflow Analyst", llm=llm)
     
     def run(self, state: WealthState) -> ExpenseAnalysis:
         profile = state.user_profile
@@ -149,21 +154,26 @@ class ExpenseAnalyst(BaseWealthAgent):
         if fixed_ratio > 0.7:
             recommendations.append("High fixed expense ratio reduces flexibility; consider reducing fixed obligations")
         
-        return ExpenseAnalysis(
-            savings_rate=max(0, savings_rate),
-            target_savings_rate=0.20,
-            fixed_expense_ratio=fixed_ratio,
-            cash_flow_health=health,
-            burn_rate_months=profile.current_emergency_fund_months,
-            recommendations=recommendations,
+        return self._enhance_qualitative(
+            state,
+            ExpenseAnalysis(
+                savings_rate=max(0, savings_rate),
+                target_savings_rate=0.20,
+                fixed_expense_ratio=fixed_ratio,
+                cash_flow_health=health,
+                burn_rate_months=profile.current_emergency_fund_months,
+                recommendations=recommendations,
+            ),
+            fields=["recommendations"],
+            role="You analyze spending patterns, savings rate, and cash-flow health.",
         )
 
 
 class AssetLiabilityAnalyst(BaseWealthAgent):
     """Evaluates net worth, asset allocation, and debt health."""
     
-    def __init__(self):
-        super().__init__("Asset & Liability Analyst")
+    def __init__(self, llm=None):
+        super().__init__("Asset & Liability Analyst", llm=llm)
     
     def run(self, state: WealthState) -> AssetAnalysis:
         profile = state.user_profile
@@ -208,24 +218,29 @@ class AssetLiabilityAnalyst(BaseWealthAgent):
         if dti and dti > 0.36:
             recommendations.append(f"Debt-to-income ({dti:.1%}) exceeds 36%; reduce debt before investing")
         
-        return AssetAnalysis(
-            net_worth=net_worth,
-            liquid_net_worth=liquid_net_worth,
-            asset_allocation=allocation,
-            debt_to_income_ratio=dti,
-            debt_to_asset_ratio=total_liabilities / total_assets if total_assets > 0 else None,
-            weighted_interest_rate=weighted_rate,
-            debt_payoff_priority=[d.name for d in debt_priority],
-            liquidity_score=min(100, (liquid_net_worth / max(profile.monthly_expenses * 3, 1)) * 25),
-            recommendations=recommendations,
+        return self._enhance_qualitative(
+            state,
+            AssetAnalysis(
+                net_worth=net_worth,
+                liquid_net_worth=liquid_net_worth,
+                asset_allocation=allocation,
+                debt_to_income_ratio=dti,
+                debt_to_asset_ratio=total_liabilities / total_assets if total_assets > 0 else None,
+                weighted_interest_rate=weighted_rate,
+                debt_payoff_priority=[d.name for d in debt_priority],
+                liquidity_score=min(100, (liquid_net_worth / max(profile.monthly_expenses * 3, 1)) * 25),
+                recommendations=recommendations,
+            ),
+            fields=["recommendations"],
+            role="You evaluate net worth, asset allocation, liquidity, and debt health.",
         )
 
 
 class GoalAnalyst(BaseWealthAgent):
     """Evaluates goal feasibility, funding gaps, and prioritization."""
     
-    def __init__(self):
-        super().__init__("Goal Analyst")
+    def __init__(self, llm=None):
+        super().__init__("Goal Analyst", llm=llm)
     
     def run(self, state: WealthState) -> GoalAnalysis:
         profile = state.user_profile
@@ -268,20 +283,25 @@ class GoalAnalyst(BaseWealthAgent):
         if not any(g.category.value == "emergency_fund" for g in profile.goals):
             recommendations.append("Add an explicit emergency fund goal if not already covered")
         
-        return GoalAnalysis(
-            goal_feasibility=feasibility,
-            funding_gaps=gaps,
-            prioritized_goals=[g.name for g in sorted_goals],
-            recommended_order=[g.name for g in sorted_goals],
-            recommendations=recommendations,
+        return self._enhance_qualitative(
+            state,
+            GoalAnalysis(
+                goal_feasibility=feasibility,
+                funding_gaps=gaps,
+                prioritized_goals=[g.name for g in sorted_goals],
+                recommended_order=[g.name for g in sorted_goals],
+                recommendations=recommendations,
+            ),
+            fields=["recommendations"],
+            role="You evaluate goal feasibility, funding gaps, and prioritization.",
         )
 
 
 class RiskProfileAnalyst(BaseWealthAgent):
     """Evaluates risk capacity vs willingness and identifies insurance gaps."""
     
-    def __init__(self):
-        super().__init__("Risk Profile Analyst")
+    def __init__(self, llm=None):
+        super().__init__("Risk Profile Analyst", llm=llm)
     
     def run(self, state: WealthState) -> RiskAnalysis:
         profile = state.user_profile
@@ -344,12 +364,17 @@ class RiskProfileAnalyst(BaseWealthAgent):
         if insurance_gaps:
             recommendations.append(f"Address insurance gaps: {', '.join(insurance_gaps)}")
         
-        return RiskAnalysis(
-            risk_capacity_score=capacity,
-            risk_willingness_score=willingness,
-            risk_alignment=alignment,
-            key_stress_events=stress_events,
-            insurance_gaps=insurance_gaps,
-            emergency_fund_recommendation_months=ef_months,
-            recommendations=recommendations,
+        return self._enhance_qualitative(
+            state,
+            RiskAnalysis(
+                risk_capacity_score=capacity,
+                risk_willingness_score=willingness,
+                risk_alignment=alignment,
+                key_stress_events=stress_events,
+                insurance_gaps=insurance_gaps,
+                emergency_fund_recommendation_months=ef_months,
+                recommendations=recommendations,
+            ),
+            fields=["key_stress_events", "recommendations"],
+            role="You evaluate risk capacity vs. willingness and identify insurance gaps.",
         )

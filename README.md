@@ -17,6 +17,8 @@ A multi-agent AI framework for personal wealth evaluation, planning, and mentors
 - [Agent Teams](#agent-teams)
 - [Investor Mentor Roster](#investor-mentor-roster)
 - [Quick Start](#quick-start)
+- [Running Locally](#running-locally)
+- [LLM Integration (MiniMax)](#llm-integration-minimax)
 - [Account Connections](#account-connections)
 - [State Schema](#state-schema)
 - [Project Structure](#project-structure)
@@ -197,6 +199,72 @@ plan_bogle = agent.with_mentor("john_bogle").evaluate()
 
 See [`examples/basic_usage.py`](examples/basic_usage.py) for a complete runnable example.
 
+## Running Locally
+
+```bash
+# 1. Clone and enter the project
+git clone https://github.com/coin-lover/WealthAgents.git
+cd WealthAgents
+
+# 2. Create a virtual environment (keeps dependencies isolated)
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+
+# 3. Install (add [llm] if you plan to use MiniMax)
+pip install -e "."
+# pip install -e ".[llm]"       # includes the OpenAI client for MiniMax
+
+# 4. Run the example
+python examples/basic_usage.py
+
+# 5. Run the tests
+pytest tests/ -q
+```
+
+No API key is required — the framework runs in **heuristic mode** by default. Add an LLM (below) to make the mentor narratives richer.
+
+## LLM Integration (MiniMax)
+
+The framework follows the TradingAgents pattern — **tools compute, LLMs reason**. When an LLM is configured, every layer of the pipeline is AI-powered:
+
+| Layer | What the LLM does |
+|-------|-------------------|
+| **5 Analysts** | Rewrite risks/recommendations with user-specific reasoning (numeric scores stay deterministic) |
+| **Researcher Debate** | A real 3-step debate: bullish thesis → bearish rebuttal → neutral judge synthesis |
+| **Strategist** | Rewrites the strategy summary in plain language (all numbers stay computed) |
+| **Mentor** | Writes the final letter in the investor's authentic voice |
+
+If the LLM is unavailable or a request fails, every layer silently falls back to heuristic mode — the framework never breaks.
+
+**1. Get an API key** from [MiniMax's platform](https://platform.minimaxi.com/) (or the [China platform](https://platform.minimax.chat/)).
+
+**2. Install and configure:**
+
+```bash
+pip install -e ".[llm]"
+export MINIMAX_API_KEY="your-key-here"
+# Optional overrides:
+# export MINIMAX_MODEL="MiniMax-M2"
+# export MINIMAX_BASE_URL="https://api.minimaxi.com/v1"   # international
+# export MINIMAX_BASE_URL="https://api.minimax.chat/v1"   # China
+```
+
+**3. Pass the client to the agent:**
+
+```python
+from wealthagents import WealthAgents, MiniMaxLLM
+
+llm = MiniMaxLLM()  # reads env vars
+agent = WealthAgents(user_profile=profile, mentor="warren_buffett", llm=llm)
+
+state = agent.evaluate()
+print(state.mentored_plan.mentor_voice_narrative)  # LLM-written in Buffett's voice
+```
+
+The mentor's system prompt (philosophy, principles, voice, decision rules) is injected automatically — each of the 7 mentors speaks distinctly. Works with `with_mentor()` and `compare_mentors()` too. See [`examples/minimax_usage.py`](examples/minimax_usage.py).
+
+Design note: quantitative fields (income scores, savings rates, allocations, stress tests) are always computed by deterministic tools — following TradingAgents' separation of data tools from LLM reasoning. The LLM never invents numbers.
+
 ## Account Connections
 
 WealthAgents uses a simple rule: **Plaid for supported countries, manual input for everything else.**
@@ -278,7 +346,7 @@ wealthagents/
 ## Roadmap
 
 - [ ] Live Plaid Link integration (currently country-detection logic only)
-- [ ] LLM-backed agent reasoning (heuristic mode by default)
+- [x] LLM-backed agent reasoning — TradingAgents-style wiring: analysts, live debate, strategist summary, mentor narratives (MiniMax)
 - [ ] Web UI for plan visualization
 - [ ] More mentor personas (Charlie Munger, Howard Marks, …)
 - [ ] Backtesting of plan recommendations against historical scenarios

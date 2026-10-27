@@ -122,3 +122,112 @@ def test_error_handling():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ─── LLM fallback tests ───
+
+def test_minimax_llm_unavailable_without_key():
+    """Without an API key, the LLM degrades gracefully to heuristic mode."""
+    from wealthagents.llm import MiniMaxLLM
+
+    llm = MiniMaxLLM(api_key=None)
+    llm.api_key = None
+    assert llm.is_available() is False
+    assert llm.chat("system", "user") is None
+
+
+def test_evaluate_without_llm_still_works():
+    """Heuristic mode: evaluate() works when no LLM is configured."""
+    from wealthagents import WealthAgents
+
+    profile = UserProfile(
+        user_id="llm_test",
+        age=40,
+        annual_gross_income=90000,
+        monthly_expenses=4000,
+        assets=[Asset(name="Savings", asset_type="savings", value=20000)],
+    )
+    agent = WealthAgents(user_profile=profile, mentor="warren_buffett")
+    state = agent.evaluate()
+    assert state.mentored_plan is not None
+    assert len(state.mentored_plan.mentor_voice_narrative) > 0
+
+
+# ─── LLM-path tests (stub MiniMax client) ───
+
+class StubLLM:
+    """Mimics MiniMaxLLM's interface, returning canned responses."""
+
+    def __init__(self, reply=None):
+        self.reply = reply
+        self.calls = []
+
+    def is_available(self):
+        return True
+
+    def chat(self, system_prompt, user_message):
+        self.calls.append((system_prompt, user_message))
+        if callable(self.reply):
+            return self.reply(system_prompt, user_message)
+        return self.reply
+
+
+def test_analyst_uses_llm_when_available():
+    """Analyst qualitative fields come from the LLM; numbers stay heuristic."""
+    from wealthagents.agents.analysts import IncomeAnalyst
+    from wealthagents.state import WealthState
+
+    stub = StubLLM(reply='{"growth_trajectory": "accelerating", '
+                          '"key_risks": ["AI disruption risk in tech sector"], '
+                          '"recommendations": ["Negotiate equity compensation"], '
+                          '"income_score": 1}')
+    profile = UserProfile(user_id="llm_user", age=32, annual_gross_income=120000,
+                          monthly_expenses=5000, industry="tech",
+                          assets=[Asset(name="Savings", asset_type="savings", value=20000)])
+    state = WealthState(user_id="llm_user", user_profile=profile)
+
+    analyst = IncomeAnalyst(llm=stub)
+    result = analyst.run(state)
+
+    assert len(stub.calls) == 1                      # LLM was actually called
+    assert result.growth_trajectory == "accelerating"  # LLM field adopted
+    assert result.key_risks == ["AI disruption risk in tech sector"]
+    assert result.income_score != 1                  # LLM cannot corrupt numeric metrics
+    assert result.income_score > 0
+
+
+def test_llm_debate_produces_synthesis():
+    """In LLM mode the researchers debate and a judge synthesizes."""
+    from wealthagents.agents.researchers import DebateSynthesizer
+    from wealthagents.state import WealthState
+
+    stub = StubLLM(reply=lambda sys, msg: f"LLM RESPONSE to: {msg.splitlines()[-1][:40]}")
+    profile = UserProfile(user_id="debate_user", age=32, annual_gross_income=120000,
+                          monthly_expenses=5000,
+                          assets=[Asset(name="Savings", asset_type="savings", value=30000)])
+    state = WealthState(user_id="debate_user", user_profile=profile)
+
+    result = DebateSynthesizer(llm=stub).synthesize(state)
+    assert len(stub.calls) == 5        # 2 researcher views + thesis + rebuttal + judge
+    assert "LLM RESPONSE" in result.synthesis
+    assert "LLM RESPONSE" in result.optimistic_view.thesis
+
+
+def test_evaluate_with_stub_llm_full_pipeline():
+    """Full pipeline runs with LLM wired through WealthAgents."""
+    from wealthagents import WealthAgents, MiniMaxLLM
+
+    replies = ['{"recommendations": ["LLM rec"], "key_risks": ["LLM risk"], '
+               '"growth_trajectory": "growing", "key_stress_events": ["LLM stress"]}',
+               "thesis", "rebuttal", "synthesis", "summary"]
+    stub = StubLLM(reply=lambda sys, msg: replies[min(len(stub.calls) - 1, len(replies) - 1)]
+                   if False else (replies.pop(0) if replies else "ok"))
+
+    profile = UserProfile(user_id="pipe_user", age=35, annual_gross_income=100000,
+                          monthly_expenses=4000,
+                          assets=[Asset(name="Savings", asset_type="savings", value=25000)])
+    agent = WealthAgents(user_profile=profile, mentor="warren_buffett", llm=stub)
+    state = agent.evaluate()
+    assert state.strategy is not None
+    assert state.mentored_plan is not None
+    assert len(stub.calls) > 5         # analysts + debate + strategist used the LLM

@@ -25,8 +25,8 @@ class Strategist(BaseWealthAgent):
     - Account funding order
     """
     
-    def __init__(self):
-        super().__init__("Strategist")
+    def __init__(self, llm=None):
+        super().__init__("Strategist", llm=llm)
     
     def run(self, state: WealthState) -> WealthStrategy:
         profile = state.user_profile
@@ -70,7 +70,7 @@ class Strategist(BaseWealthAgent):
         
         summary = self._build_summary(ef_months, debt_strategy, monthly_investment, allocation)
         
-        return WealthStrategy(
+        strategy = WealthStrategy(
             emergency_fund_target=ef_target,
             emergency_fund_months=ef_months,
             debt_strategy=debt_strategy,
@@ -81,6 +81,8 @@ class Strategist(BaseWealthAgent):
             action_items=actions,
             strategy_summary=summary,
         )
+        
+        return self._enhance_summary(state, strategy)
     
     def _design_debt_strategy(self, profile, state) -> tuple:
         asset = state.asset_analysis
@@ -220,6 +222,22 @@ class Strategist(BaseWealthAgent):
             ))
         
         return actions
+    
+    def _enhance_summary(self, state: WealthState, strategy: WealthStrategy) -> WealthStrategy:
+        """Let the LLM rewrite the strategy summary (numbers stay deterministic)."""
+        if not self._llm_available():
+            return strategy
+        debate = state.debate_result
+        summary = self.llm.chat(
+            "You are the Strategist on a wealth-planning desk. Summarize this user's wealth "
+            "strategy in 2-3 crisp sentences a smart non-expert would understand. Keep every "
+            "number exactly as given.",
+            f"{self._build_context(state)}\n\n"
+            f"STRATEGY (authoritative): {strategy.strategy_summary}\n"
+            f"ACTION ITEMS: {[a.action for a in strategy.action_items]}\n"
+            f"DEBATE OUTCOME: {debate.synthesis if debate else 'N/A'}",
+        )
+        return strategy.model_copy(update={"strategy_summary": summary}) if summary else strategy
     
     def _build_summary(self, ef_months, debt_strategy, monthly_investment, allocation) -> str:
         return (
