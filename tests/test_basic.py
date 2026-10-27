@@ -231,3 +231,72 @@ def test_evaluate_with_stub_llm_full_pipeline():
     assert state.strategy is not None
     assert state.mentored_plan is not None
     assert len(stub.calls) > 5         # analysts + debate + strategist used the LLM
+
+
+# ─── Provider registry tests ───
+
+def test_provider_registry_covers_expected_env_vars():
+    """All TradingAgents-convention providers are registered."""
+    from wealthagents.llm import PROVIDERS
+
+    expected = {
+        "OPENAI_API_KEY", "GOOGLE_API_KEY", "ANTHROPIC_API_KEY", "XAI_API_KEY",
+        "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY", "DASHSCOPE_CN_API_KEY",
+        "ZHIPU_API_KEY", "ZHIPU_CN_API_KEY", "MINIMAX_API_KEY",
+        "MINIMAX_CN_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY",
+        "MOONSHOT_API_KEY", "GROQ_API_KEY", "NVIDIA_API_KEY",
+    }
+    registered = {p.env_var for p in PROVIDERS.values()}
+    assert expected <= registered
+
+
+def test_get_llm_auto_detects_from_env(monkeypatch):
+    """get_llm() picks the first provider with a key set."""
+    from wealthagents.llm import PROVIDERS, get_llm
+
+    for p in PROVIDERS.values():
+        monkeypatch.delenv(p.env_var, raising=False)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+
+    llm = get_llm()
+    assert llm is not None
+    assert llm.provider.name == "deepseek"  # first provider in registry order with a key set
+
+
+def test_get_llm_explicit_provider(monkeypatch):
+    from wealthagents.llm import get_llm
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    llm = get_llm("openai", model="gpt-4o")
+    assert llm.model == "gpt-4o"
+    assert llm.api_key == "test-key"
+
+
+def test_get_llm_none_when_no_keys(monkeypatch):
+    from wealthagents.llm import PROVIDERS, get_llm
+
+    for p in PROVIDERS.values():
+        monkeypatch.delenv(p.env_var, raising=False)
+    assert get_llm() is None
+
+
+def test_unknown_provider_raises():
+    from wealthagents.llm import get_llm
+    import pytest
+
+    with pytest.raises(ValueError, match="Unknown provider"):
+        get_llm("not-a-provider")
+
+
+def test_llm_accepts_provider_name_string(monkeypatch):
+    """WealthAgents(llm='deepseek') resolves via the registry."""
+    from wealthagents import WealthAgents
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    profile = UserProfile(user_id="provider_user", age=30,
+                          annual_gross_income=80000, monthly_expenses=4000,
+                          assets=[Asset(name="S", asset_type="savings", value=10000)])
+    agent = WealthAgents(user_profile=profile, llm="deepseek")
+    assert agent.llm is not None
+    assert agent.llm.provider.name == "deepseek"

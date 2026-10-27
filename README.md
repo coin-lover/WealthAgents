@@ -18,7 +18,7 @@ A multi-agent AI framework for personal wealth evaluation, planning, and mentors
 - [Investor Mentor Roster](#investor-mentor-roster)
 - [Quick Start](#quick-start)
 - [Running Locally](#running-locally)
-- [LLM Integration (MiniMax)](#llm-integration-minimax)
+- [LLM Integration](#llm-integration)
 - [Account Connections](#account-connections)
 - [State Schema](#state-schema)
 - [Project Structure](#project-structure)
@@ -223,7 +223,7 @@ pytest tests/ -q
 
 No API key is required — the framework runs in **heuristic mode** by default. Add an LLM (below) to make the mentor narratives richer.
 
-## LLM Integration (MiniMax)
+## LLM Integration
 
 The framework follows the TradingAgents pattern — **tools compute, LLMs reason**. When an LLM is configured, every layer of the pipeline is AI-powered:
 
@@ -236,30 +236,52 @@ The framework follows the TradingAgents pattern — **tools compute, LLMs reason
 
 If the LLM is unavailable or a request fails, every layer silently falls back to heuristic mode — the framework never breaks.
 
-**1. Get an API key** from [MiniMax's platform](https://platform.minimaxi.com/) (or the [China platform](https://platform.minimax.chat/)).
+WealthAgents follows the [TradingAgents](https://github.com/TauricResearch/TradingAgents) provider convention — set **one** API-key environment variable and the framework auto-detects the provider.
 
-**2. Install and configure:**
+**Supported providers** (`pip install "wealthagents[llm]"` first — installs the OpenAI + Anthropic clients):
 
-```bash
-pip install -e ".[llm]"
-export MINIMAX_API_KEY="your-key-here"
-# Optional overrides:
-# export MINIMAX_MODEL="MiniMax-M2"
-# export MINIMAX_BASE_URL="https://api.minimaxi.com/v1"   # international
-# export MINIMAX_BASE_URL="https://api.minimax.chat/v1"   # China
-```
+| Provider | Env var | Default model |
+|----------|---------|---------------|
+| OpenAI (GPT) | `OPENAI_API_KEY` | `gpt-4o-mini` |
+| Google (Gemini) | `GOOGLE_API_KEY` | `gemini-2.5-flash` |
+| Anthropic (Claude) | `ANTHROPIC_API_KEY` | `claude-sonnet-4-5` |
+| xAI (Grok) | `XAI_API_KEY` | `grok-4` |
+| DeepSeek | `DEEPSEEK_API_KEY` | `deepseek-chat` |
+| Qwen (international) | `DASHSCOPE_API_KEY` | `qwen-plus` |
+| Qwen (China) | `DASHSCOPE_CN_API_KEY` | `qwen-plus` |
+| GLM via Z.AI (international) | `ZHIPU_API_KEY` | `glm-4.5` |
+| GLM via BigModel (China) | `ZHIPU_CN_API_KEY` | `glm-4.5` |
+| MiniMax (global) | `MINIMAX_API_KEY` | `MiniMax-M2` |
+| MiniMax (China) | `MINIMAX_CN_API_KEY` | `MiniMax-M2` |
+| OpenRouter | `OPENROUTER_API_KEY` | `openai/gpt-4o-mini` |
+| Mistral | `MISTRAL_API_KEY` | `mistral-large-latest` |
+| Kimi (Moonshot) | `MOONSHOT_API_KEY` | `moonshot-v1-8k` |
+| Groq | `GROQ_API_KEY` | `llama-3.3-70b-versatile` |
+| NVIDIA NIM | `NVIDIA_API_KEY` | `nvidia/llama-3.3-70b-instruct` |
 
-**3. Pass the client to the agent:**
+Every provider except Anthropic uses the OpenAI-compatible chat API; Anthropic uses its native SDK. Any other OpenAI-compatible endpoint (e.g., local Ollama) works via `LLMClient` with an explicit `base_url`.
+
+**Usage:**
 
 ```python
-from wealthagents import WealthAgents, MiniMaxLLM
+from wealthagents import WealthAgents, get_llm
 
-llm = MiniMaxLLM()  # reads env vars
+# Auto-detect: picks the first provider with an env-var key set
+llm = get_llm()
+
+# Or be explicit (provider name, optional model override):
+llm = get_llm("deepseek")
+llm = get_llm("openai", model="gpt-4o")
+
 agent = WealthAgents(user_profile=profile, mentor="warren_buffett", llm=llm)
-
 state = agent.evaluate()
-print(state.mentored_plan.mentor_voice_narrative)  # LLM-written in Buffett's voice
+print(state.mentored_plan.mentor_voice_narrative)
+
+# Shortcut: pass the provider name directly
+agent = WealthAgents(user_profile=profile, mentor="warren_buffett", llm="anthropic")
 ```
+
+The mentor's system prompt (philosophy, principles, voice, decision rules) is injected automatically — each of the 7 mentors speaks distinctly. Works with `with_mentor()` and `compare_mentors()` too. See [`examples/minimax_usage.py`](examples/minimax_usage.py) (identical flow for every provider).
 
 The mentor's system prompt (philosophy, principles, voice, decision rules) is injected automatically — each of the 7 mentors speaks distinctly. Works with `with_mentor()` and `compare_mentors()` too. See [`examples/minimax_usage.py`](examples/minimax_usage.py).
 

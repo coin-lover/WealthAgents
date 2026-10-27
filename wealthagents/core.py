@@ -10,7 +10,7 @@ from wealthagents.state import WealthState, UserProfile
 from wealthagents.graph import WealthAgentsGraph
 from wealthagents.mentors.registry import MentorRegistry
 from wealthagents.connections import AccountConnectionManager, get_connection_mode
-from wealthagents.llm import MiniMaxLLM
+from wealthagents.llm import LLMClient, MiniMaxLLM, get_llm
 
 
 class WealthAgents:
@@ -41,11 +41,14 @@ class WealthAgents:
             user_profile: The user's financial profile
             mentor: Mentor persona ID (default: warren_buffett)
             state: Optional existing WealthState to continue from
-            llm: Optional LLM client (e.g., MiniMaxLLM) used to enhance
-                 the mentor's voice narrative. Heuristic mode when None.
+            llm: Optional LLM client used to enhance outputs. Accepts an
+                 LLMClient/MiniMaxLLM instance, a provider name string
+                 (e.g., "deepseek"), or None for heuristic mode.
         """
         self.user_profile = user_profile
         self.mentor_id = mentor
+        if isinstance(llm, str):
+            llm = get_llm(llm)
         self.llm = llm
         
         if state:

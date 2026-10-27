@@ -10,7 +10,7 @@ from wealthagents.connections import (
     AccountConnectionManager,
 )
 from wealthagents.manual_input import ManualInputGuide, get_manual_input_guide
-from wealthagents.llm import MiniMaxLLM
+from wealthagents.llm import LLMClient, MiniMaxLLM, get_llm, list_providers
 
 __all__ = [
     "WealthAgents",
@@ -24,5 +24,8 @@ __all__ = [
     "ManualInputGuide",
     "get_manual_input_guide",
     "MiniMaxLLM",
+    "LLMClient",
+    "get_llm",
+    "list_providers",
 ]
 __version__ = "0.1.0"

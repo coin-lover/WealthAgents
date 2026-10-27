@@ -13,7 +13,7 @@ personal wealth evaluation.
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from wealthagents.llm import MiniMaxLLM
+from wealthagents.llm import LLMClient
 
 from wealthagents.state import WealthState, UserProfile, PlanDecision
 from wealthagents.agents.analysts import (
@@ -43,7 +43,7 @@ class WealthAgentsGraph:
     as a sequential executor, or adapted to LangGraph nodes.
     """
     
-    def __init__(self, mentor_id: str = "warren_buffett", llm: Optional[MiniMaxLLM] = None):
+    def __init__(self, mentor_id: str = "warren_buffett", llm: Optional[LLMClient] = None):
         self.mentor_id = mentor_id
         self.llm = llm
         
@@ -217,7 +217,7 @@ class WealthAgentsGraph:
 
 # ─── LangGraph Adapter (optional) ───
 
-def build_langgraph_workflow(mentor_id: str = "warren_buffett", llm: Optional[MiniMaxLLM] = None):
+def build_langgraph_workflow(mentor_id: str = "warren_buffett", llm: Optional[LLMClient] = None):
     """Build a LangGraph StateGraph for WealthAgents.
     
     This is the advanced version that uses LangGraph for
@@ -226,7 +226,7 @@ def build_langgraph_workflow(mentor_id: str = "warren_buffett", llm: Optional[Mi
     Requires: pip install langgraph
     
     Usage:
-        graph = build_langgraph_workflow(llm=MiniMaxLLM())
+        graph = build_langgraph_workflow(llm=get_llm())
         result = graph.invoke(initial_state)
     """
     try:

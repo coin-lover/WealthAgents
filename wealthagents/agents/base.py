@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, TypeVar
 
 from pydantic import BaseModel
 
-from wealthagents.llm import MiniMaxLLM, extract_json
+from wealthagents.llm import LLMClient, extract_json
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -25,7 +25,7 @@ class BaseWealthAgent(ABC):
         self,
         name: str,
         model_config: Optional[Dict[str, Any]] = None,
-        llm: Optional[MiniMaxLLM] = None,
+        llm: Optional[LLMClient] = None,
     ):
         self.name = name
         self.model_config = model_config or {}
